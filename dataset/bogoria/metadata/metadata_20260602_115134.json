@@ -1,0 +1,10 @@
+{
+  "satellite": "Sentinel-1",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "polarization": "VV",
+  "orbit": "ASCENDING",
+  "num_images": 3,
+  "file_path": "dataset/bogoria/raw/sentinel1/2025-01-01_to_2025-01-31_VV_ASCENDING.tif",
+  "acquisition_time": "20260602_115134"
+}
