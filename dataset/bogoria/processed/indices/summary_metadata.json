@@ -1,0 +1,15 @@
+{
+  "total_indices": 1,
+  "indices": [
+    "NDWI"
+  ],
+  "output_directory": "./dataset/bogoria/processed/indices/",
+  "creation_date": "2026-06-09T12:39:08.009662",
+  "file_structure": {
+    "ndwi/": {
+      "geotiff": "ndwi.tif",
+      "numpy_array": "ndwi_array.npy",
+      "metadata": "ndwi_metadata.json"
+    }
+  }
+}

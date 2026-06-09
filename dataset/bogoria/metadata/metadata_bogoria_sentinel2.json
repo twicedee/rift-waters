@@ -1,0 +1,34 @@
+[
+  {
+    "satellite": "sentinel2",
+    "start_date": "2023-01-01",
+    "end_date": "2023-01-31",
+    "bands": [
+      "Blue",
+      "Green",
+      "Red",
+      "NIR",
+      "SWIR1",
+      "SWIR2"
+    ],
+    "resolution": 10,
+    "max_cloud": 30,
+    "acquisition_time": "20260607_105100"
+  },
+  {
+    "satellite": "sentinel2",
+    "start_date": "2023-02-01",
+    "end_date": "2023-02-28",
+    "bands": [
+      "Blue",
+      "Green",
+      "Red",
+      "NIR",
+      "SWIR1",
+      "SWIR2"
+    ],
+    "resolution": 10,
+    "max_cloud": 30,
+    "acquisition_time": "20260607_105213"
+  }
+]

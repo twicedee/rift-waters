@@ -1,25 +1,30 @@
 import os
 import json
-import numpy as np
 import geemap
+import rasterio
+import numpy as np
+from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
-import rasterio
-from pathlib import Path
 from rasterio.transform import from_bounds
 
 
 class CalculateIndices:
-    def __init__(self, image, index_band=None):
+    def __init__(self, image, region, image_id=None, index_band=None):
         """
         Initialize the indices calculator
 
         Args:
             image: Either file path (string) or ee.Image object
+            region: The region for which to calculate indices
+            image_id: Optional ID for the image
             index_band: Optional band name for the index
         """
+            
         self.image = image
         self.index_band = index_band
+        self.image_id = image_id
+        self.region = region
         # Determine if local file or Earth Engine object
         self.is_local = isinstance(image, str)
 
@@ -33,10 +38,10 @@ class CalculateIndices:
             if n_bands < 4:
                 raise ValueError(f"Need at least 4 bands, got {n_bands}")
 
-            red = src.read(1).astype(float)
+            red = src.read(3).astype(float)
             green = src.read(2).astype(float)
-            nir = src.read(3).astype(float)
-            swir1 = src.read(4).astype(float)
+            nir = src.read(4).astype(float)
+            swir1 = src.read(5).astype(float)
 
             # Get transform and CRS for saving
             transform = src.transform
@@ -180,7 +185,7 @@ class CalculateIndices:
         return output_path
 
     def save_indices_local(
-        self, index_band, output_dir="./datasets/processed/indices/"
+        self, index_band
     ):
         """
         Save each index as both GeoTIFF image and numpy array locally
@@ -190,6 +195,7 @@ class CalculateIndices:
             output_dir: Base directory for saving outputs
         """
         # Create output directory
+        output_dir = f"./dataset/{self.region}/processed/indices/"
         os.makedirs(output_dir, exist_ok=True)
 
         # Handle index_band if it's passed as a list
@@ -218,7 +224,7 @@ class CalculateIndices:
             raise ValueError(f"Unsupported index specified: {index_band}")
 
         # Create band-specific directory
-        band_dir = os.path.join(output_dir, index_name)
+        band_dir = Path(output_dir) / index_name.lower()
         os.makedirs(band_dir, exist_ok=True)
 
         # Get region and scale for Earth Engine export
@@ -229,7 +235,7 @@ class CalculateIndices:
             region = self.image.geometry().bounds().getInfo()
 
         # 1. Save as GeoTIFF image
-        tif_path = os.path.join(band_dir, f"{index_name}bar.tif")
+        tif_path = band_dir / f"{self.image_id}bar.tif"
         print(f"  Saving GeoTIFF: {tif_path}")
 
         if self.is_local:
@@ -288,80 +294,8 @@ class CalculateIndices:
         self._save_summary_metadata(output_dir, [index_band])
 
         print(f"\n✅ Index saved to: {band_dir}")
-        return band_dir
 
-    def save_indices_with_visualization(
-        self, index_band, output_dir="./datasets/processed/indices/"
-    ):
-        """
-        Save indices as GeoTIFF, numpy arrays, AND PNG visualizations
-
-        Args:
-            index_band: String specifying which index to calculate
-            output_dir: Base directory for saving outputs
-        """
-        # First save as images and arrays
-        band_dir = self.save_indices_local(index_band, output_dir)
-
-        # Now create visualizations
-        print("\nCreating visualizations...")
-        if isinstance(index_band, list):
-            index_band = index_band[0] if index_band else "NDWI"
-
-        index_name = index_band.lower()
-        npy_path = os.path.join(band_dir, f"{index_name}_array.npy")
-        png_path = os.path.join(band_dir, f"{index_name}_visualization.png")
-
-        try:
-            # Load numpy array (if it exists from Earth Engine export)
-            if os.path.exists(npy_path):
-                array = np.load(npy_path)
-            else:
-                # For local files, recalculate the array
-                if self.is_local:
-                    array, transform, crs = self.calculate_index_from_local(
-                        self.image, index_name
-                    )
-                else:
-                    print(f"  ✗ No numpy array found at {npy_path}")
-                    return
-
-            # Create visualization
-            fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-
-            # Plot 1: Colormap visualization
-            im = axes[0].imshow(array, cmap="RdYlGn", vmin=-1, vmax=1)
-            axes[0].set_title(f"{index_band.upper()} - Colormap")
-            axes[0].axis("off")
-            plt.colorbar(im, ax=axes[0])
-
-            # Plot 2: Histogram
-            axes[1].hist(array[~np.isnan(array)], bins=50, alpha=0.7, color="blue")
-            axes[1].set_title(f"{index_band.upper()} - Histogram")
-            axes[1].set_xlabel("Index Value")
-            axes[1].set_ylabel("Frequency")
-            axes[1].grid(True, alpha=0.3)
-
-            # Add statistics as text
-            stats = f"Min: {np.nanmin(array):.3f}\nMax: {np.nanmax(array):.3f}\nMean: {np.nanmean(array):.3f}\nStd: {np.nanstd(array):.3f}"
-            axes[1].text(
-                0.02,
-                0.98,
-                stats,
-                transform=axes[1].transAxes,
-                verticalalignment="top",
-                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
-            )
-
-            plt.suptitle(f"{index_band.upper()} Index Analysis", fontsize=16)
-            plt.tight_layout()
-            plt.savefig(png_path, dpi=150, bbox_inches="tight")
-            plt.close()
-
-            print(f"  ✓ Visualization saved: {png_path}")
-
-        except Exception as e:
-            print(f"  ✗ Error creating visualization for {index_band}: {e}")
+   
 
     def _save_summary_metadata(self, output_dir, index_bands):
         """
@@ -403,3 +337,15 @@ class CalculateIndices:
             json.dump(summary_metadata, f, indent=2)
 
         print(f"\n✓ Summary metadata saved to: {summary_path}")
+        
+        
+    def batch_index_processing(self,images, index, output_dir="./datasets/processed/indices/"):
+            """
+            Process multiple indices in batch and save results
+
+            Args:
+                index_bands: List of index band names to calculate
+                output_dir: Base directory for saving outputs
+            """
+            for image in images:
+                self.save_indices_local(index_band=index, output_dir=output_dir)

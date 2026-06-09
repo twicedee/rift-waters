@@ -1,0 +1,20 @@
+[
+  {
+    "satellite": "Sentinel-1",
+    "start_date": "2020-01-01",
+    "end_date": "2020-01-31",
+    "bands": [],
+    "resolution": "",
+    "max_cloud": 0,
+    "acquisition_time": "20260607_125402"
+  },
+  {
+    "satellite": "Sentinel-1",
+    "start_date": "2020-02-01",
+    "end_date": "2020-02-29",
+    "bands": [],
+    "resolution": "",
+    "max_cloud": 0,
+    "acquisition_time": "20260607_125607"
+  }
+]

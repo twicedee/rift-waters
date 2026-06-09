@@ -1,0 +1,15 @@
+{
+  "total_indices": 1,
+  "indices": [
+    "NDVI"
+  ],
+  "output_directory": "./dataset/['NDVI']/processed/indices/",
+  "creation_date": "2026-06-09T12:22:46.229331",
+  "file_structure": {
+    "ndvi/": {
+      "geotiff": "ndvi.tif",
+      "numpy_array": "ndvi_array.npy",
+      "metadata": "ndvi_metadata.json"
+    }
+  }
+}

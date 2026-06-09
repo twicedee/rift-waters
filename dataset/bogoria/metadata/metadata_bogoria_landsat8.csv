@@ -1,0 +1,4 @@
+image_id,file_path,no_images
+2020-02-29,dataset/bogoria/raw/landsat8/landsat8_2020-02-01_to_2020-02-29.tif,1
+2020-03-31,dataset/bogoria/raw/landsat8/landsat8_2020-03-01_to_2020-03-31.tif,1
+2020-06-30,dataset/bogoria/raw/landsat8/landsat8_2020-06-01_to_2020-06-30.tif,1

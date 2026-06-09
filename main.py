@@ -106,12 +106,13 @@ def configure_indices(args) -> dict:
     """Configure index calculation parameters based on command line arguments"""
 
     config = {
+        "region": args.region,
         "image": args.image,
-        "output_dir": args.output_dir,
         "indices": args.indices,
     }
 
     return config
+
 
 def configure_visualization(args) -> dict:
     """Configure visualization parameters based on command line arguments"""
@@ -125,19 +126,42 @@ def configure_visualization(args) -> dict:
     return config
 
 
-
 def configure_sar(args) -> dict:
     """Configure SAR processing parameters based on command line arguments"""
 
     config = {
         "image": args.image,
+        "region": args.region,
         "method": args.method,
+        "image_id": args.image_id,
         "threshold_value": args.threshold_value,
     }
 
     return config
 
 
+def configure_batch_acquisition(args):
+    config = {
+        "satellite": args.satellite,
+        "start_year": args.start_year,
+        "end_year": args.end_year,
+        "region": args.region,
+    }
+
+    return config
+
+
+def configure_climate(args) -> dict:
+    """Configure climate data acquisition parameters based on command line arguments"""
+
+    config = {
+        "region": args.region,
+        "start_date": args.start_date,
+        "end_date": args.end_date,
+        # "era5_variables": args.era5_variables,
+    }
+
+    return config
 
 
 if __name__ == "__main__":
@@ -191,15 +215,95 @@ if __name__ == "__main__":
         "--image", type=str, required=True, help="Directory containing acquired imagery"
     )
     indices_parser.add_argument(
-        "--output_dir",
-        type=str,
-        help="Directory to save calculated indices (default: ./indices)",
+        "--region", type=str, required=True, help="Name of the region of interest for index calculation"
+        
     )
     indices_parser.add_argument(
         "--indices",
         nargs="+",
         default=["NDVI"],
         help="Spectral indices to calculate (default: NDVI)",
+    )
+
+    sar_parser = subparsers.add_parser(
+        "process_sar", help="Process Sentinel-1 SAR imagery for water detection"
+    )
+    sar_parser.add_argument(
+        "--image",
+        type=str,
+        required=True,
+        help="Directory containing acquired SAR imagery",
+    )
+    sar_parser.add_argument(
+        "--region",
+        type=str,
+        required=True,
+        help="Name of the region of interest for SAR processing",
+    )
+    sar_parser.add_argument(
+        "--image_id",
+        required=True,
+        type=str,
+        help="Unique identifier for the SAR image (optional, will be derived from filename if not provided)",
+    )
+    sar_parser.add_argument(
+        "--method",
+        type=str,
+        default="threshold",
+        help="Method for water detection (default: threshold, options: threshold, adaptive_threshold, local_threshold, kmeans)",
+    )
+    sar_parser.add_argument(
+        "--threshold_value",
+        type=float,
+        default=-15,
+        help="Threshold value for water detection (only used if method=threshold, default: 10)",
+    )
+
+    climate_aquisition_parser = subparsers.add_parser(
+        "acquire_climate",
+        help="Acquire climate data for the specified region and time period",
+    )
+    climate_aquisition_parser.add_argument(
+        "--region",
+        type=str,
+        required=True,
+        help="Name of the region of interest for climate data acquisition",
+    )
+    climate_aquisition_parser.add_argument(
+        "--start_date",
+        type=str,
+        required=True,
+        help="Start date for climate data acquisition (YYYY-MM-DD)",
+    )
+    climate_aquisition_parser.add_argument(
+        "--end_date",
+        type=str,
+        required=True,
+        help="End date for climate data acquisition (YYYY-MM-DD)",
+    )
+
+    batch_acquisition_parser = subparsers.add_parser(
+        "batch_acquisition",
+        help="Batch acquire satellite imagery for multiple regions and time periods",
+    )
+
+    batch_acquisition_parser.add_argument(
+        "--satellite",
+        type=str,
+        required=True,
+        help="Path to JSON file containing list of images to acquire with parameters ",
+    )
+    batch_acquisition_parser.add_argument(
+        "--start_year", type=int, required=True, help="Acquisition start year"
+    )
+    batch_acquisition_parser.add_argument(
+        "--end_year", type=int, required=True, help="Acquisition end year"
+    )
+    batch_acquisition_parser.add_argument(
+        "--region",
+        type=str,
+        required=True,
+        help="Directory to save acquired imagery (default: ./datasets)",
     )
     visualise_parser = subparsers.add_parser(
         "visualize", help="Visualize acquired imagery"
@@ -214,10 +318,15 @@ if __name__ == "__main__":
         help="Satellite type for visualization (e.g., sentinel2, sentinel1, landsat)",
     )
     visualise_parser.add_argument(
-        "--title", type=str, default="Satellite Image", help="Title for the visualization"
+        "--title",
+        type=str,
+        default="Satellite Image",
+        help="Title for the visualization",
     )
+
     args = parser.parse_args()
 
+    # Aquire a single image
     if args.command == "acquire":
         acq_config = configure_acquisition(args)
         acquisition = ImageAcquisition(
@@ -244,8 +353,8 @@ if __name__ == "__main__":
                     start_date=acq_config["start_date"],
                     end_date=acq_config["end_date"],
                     polarization="VV",
-                    #export_resolution=acq_config["resolution"],
-                    #apply_mask=True,
+                    # export_resolution=acq_config["resolution"],
+                    # apply_mask=True,
                 )
             elif "landsat" in acq_config["satellites"]:
                 acquisition.acquire_landsat(
@@ -261,41 +370,91 @@ if __name__ == "__main__":
 
         except Exception as e:
             print(f"❌ Error occurred while authenticating with GEE: {e}")
+    if args.command == "batch_acquisition":
+        batch_config = configure_batch_acquisition(args)
+        acquisition = ImageAcquisition(region=batch_config["region"])
+        roi = get_roi_by_name(batch_config["region"])
+
+        try:
+            if roi is None:
+                print(f"❌ Invalid region specified: {batch_config['region']}")
+                exit(1)
+
+            acquisition.batch_acquisition(
+                satellite=batch_config["satellite"],
+                start_year=batch_config["start_year"],
+                end_year=batch_config["end_year"],
+                roi=roi,
+            )
+        except Exception as e:
+            print(f"❌ Error occurred during batch acquisition: {e}")
+
+    if args.command == "acquire_climate":
+        climate_config = configure_climate(args)
+        climate_acquisition = ClimateAcquisition(
+            region=climate_config["region"],
+        )
+        roi = get_roi_by_name(climate_config["region"])
+
+        try:
+            if roi is None:
+                print(f"❌ Invalid region specified: {climate_config['region']}")
+                exit(1)
+
+            climate_acquisition.acquire_era5(
+                roi=roi,
+                start_date=climate_config["start_date"],
+                end_date=climate_config["end_date"],
+            )
+        except Exception as e:
+            print(f"❌ Error occurred while acquiring climate data: {e}")
 
     if args.command == "calculate_indices":
         indices_config = configure_indices(args)
         # image = geemap.load_GeoTIFF(indices_config["image"])
         calculate_indices = CalculateIndices(
-            indices_config["image"], indices_config["indices"]
+            image=indices_config["image"],
+            region=indices_config["region"],
+            index_band=indices_config["indices"],
         )
         try:
             # calculate_indices.save_indices_local(indices_config["indices"])
-            calculate_indices.save_indices_with_visualization(indices_config["indices"])
+            calculate_indices.save_indices_local(indices_config["indices"])
         except Exception as e:
             print(f"❌ Error occurred while calculating indices: {e}")
-            
+
     if args.command == "process_sar":
         sar_config = configure_sar(args)
-        image = SARProcessor.load_sentinel1_image(sar_config["image"])
+        SAR_processor = SARProcessor(
+            sar_config["image"], sar_config["image_id"], sar_config["region"]
+        )
+
         try:
-            # process_sar = ProcessSAR(sar_config["image"])
+            SAR_processor.process_sentinel1_sar(
+                sar_config["image"], sar_config["method"], sar_config["threshold_value"]
+            )
             # process_sar.save_water_mask()
-            pass
+
         except Exception as e:
             print(f"❌ Error occurred while processing SAR data: {e}")
-            
+
     if args.command == "visualize":
         vis_config = configure_visualization(args)
         try:
-            #image = ee.Image(vis_config["image"])
-            visualize_image(vis_config["image"], vis_config["satellite"], vis_config["title"])
+            # image = ee.Image(vis_config["image"])
+            visualize_image(
+                vis_config["image"], vis_config["satellite"], vis_config["title"]
+            )
         except Exception as e:
             print(f"❌ Error occurred while visualizing image: {e}")
 
     """
     _summary_
 
-python main.py acquire --region "bogoria" --start_date "2025-01-01" --end_date "2025-01-31" --max_cloud 20 --resolution 10 --satellites sentinel2 
-python main.py calculate_indices --image datasets/raw/sentinel2/sentinel2_2025-02-01_to_2025-03-03_cloud30.tif --indices "NDWI" 
+python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites sentinel2 
+python main.py calculate_indices --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2020-02-01_to_2020-02-29.tif --indices "NDWI" 
 python main.py visualize --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2025-01-01_to_2025-01-31.tif --satellite landsat --title "NDWI Visualization"
+python main.py process_sar --image /home/desy/rift-waters/dataset/bogoria/raw/sentinel1/sentinel1_2025-01-01_to_2025-01-31.tif --region "bogoria" --method "threshold" --threshold_value -15
+python main.py batch_acquisition --satellite "sentinel2" --start_year 2020 --end_year 2021 --region "bogoria"
+python main.py acquire_climate --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31"
     """

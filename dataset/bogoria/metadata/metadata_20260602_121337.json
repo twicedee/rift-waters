@@ -1,9 +1,0 @@
-{
-  "satellite": "landsat8",
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "max_cloud": 20,
-  "num_images": 2,
-  "file_path": "dataset/bogoria/raw/landsat8/landsat8_2025-01-01_to_2025-01-31.tif",
-  "acquisition_time": "20260602_121337"
-}

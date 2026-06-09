@@ -1,0 +1,29 @@
+[
+  {
+    "satellite": "landsat8",
+    "start_date": "2020-02-01",
+    "end_date": "2020-02-29",
+    "bands": [],
+    "resolution": "",
+    "max_cloud": 10,
+    "acquisition_time": "20260607_125956"
+  },
+  {
+    "satellite": "landsat8",
+    "start_date": "2020-03-01",
+    "end_date": "2020-03-31",
+    "bands": [],
+    "resolution": "",
+    "max_cloud": 10,
+    "acquisition_time": "20260607_130013"
+  },
+  {
+    "satellite": "landsat8",
+    "start_date": "2020-06-01",
+    "end_date": "2020-06-30",
+    "bands": [],
+    "resolution": "",
+    "max_cloud": 10,
+    "acquisition_time": "20260607_130032"
+  }
+]
