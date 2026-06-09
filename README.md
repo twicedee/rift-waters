@@ -2,7 +2,7 @@
 
 # 📡 RW-AIMS
 
-**Rift-Water Analysis and Image Management System**
+**RiftWaters-AI monitoring system**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Google Earth Engine](https://img.shields.io/badge/🌍-Earth%20Engine-34A853.svg)](https://earthengine.google.com/)
@@ -39,25 +39,61 @@ A comprehensive satellite imagery acquisition and processing system for monitori
 ## 🔧 Installation
 
 1. **Fork and Clone the repository:**
+Fork this repository then clone 
 ```
-git clone https://github.com/yourusername/RW-AIMS.git
+git clone https://github.com/yourusername/rift-waters.git
 cd RW-AIMS
 ```
 
 2. **Create a virtual environment**
 
-   - On Windows:
+- On Windows:
 
 ```python -m venv env```
+
 ```env\Scripts\activate.bat```
 
+- On Mac/Linux:
 
-   - On Mac/Linux:
 ```python3 -m venv env```
+
 ```source env/bin/activate```
 
+3. **Install dependencies**
+```pip install -r requirements.txt```
 
 
+## 💻 Command Examples
+
+### Acquire Sentinel-2 Imagery
+```
+python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites sentinel2
+```
+### Aquire sentinel-1 Imegery
+```
+python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites sentinel1
+```
+### Aquire landsat Imagery
+```
+python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites landsat8
+```
+### Compute Indices
+```
+python main.py calculate_indices --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2020-02-01_to_2020-02-29.tif --indices "NDWI" 
+
+```
+
+### Process SAR Imagery
+```
+python main.py process_sar --image /home/desy/rift-waters/dataset/bogoria/raw/sentinel1/sentinel1_2025-01-01_to_2025-01-31.tif --region "bogoria" --method "threshold" --threshold_value -15
+
+```
+
+### Batch Acquisition
+```
+python main.py batch_acquisition --satellite "sentinel2" --start_year 2020 --end_year 2021 --region "bogoria"
+
+```
 
 
 ## 📚 Additional Resources
