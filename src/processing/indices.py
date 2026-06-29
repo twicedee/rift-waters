@@ -25,7 +25,6 @@ class CalculateIndices:
         self.index_band = index_band
         self.image_id = image_id
         self.region = region
-        # Determine if local file or Earth Engine object
         self.is_local = isinstance(image, str)
 
     def calculate_index_from_local(self, image_path, index_name):

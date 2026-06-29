@@ -5,6 +5,7 @@ import argparse
 import json
 import geemap
 import datetime
+import pandas as pd
 
 from src.acquisition.image_aquisition import ImageAcquisition
 from src.acquisition.climate import ClimateAcquisition
@@ -160,7 +161,12 @@ def configure_climate(args) -> dict:
         "end_date": args.end_date,
         # "era5_variables": args.era5_variables,
     }
+    return config
 
+
+def configure_batch_sar_processing(args):
+    config = {"csv_file": args.csv_file,
+              "region": args.region}
     return config
 
 
@@ -305,6 +311,13 @@ if __name__ == "__main__":
         required=True,
         help="Directory to save acquired imagery (default: ./datasets)",
     )
+    
+    batch_sar_processing_parser = subparsers.add_parser("batch_process_sar", help="batch_processing of sar images")
+    batch_sar_processing_parser.add_argument("--csv_file", type=str, required=True)
+    batch_sar_processing_parser.add_argument("--region", type=str, required=True)
+
+    
+    
     visualise_parser = subparsers.add_parser(
         "visualize", help="Visualize acquired imagery"
     )
@@ -447,14 +460,28 @@ if __name__ == "__main__":
             )
         except Exception as e:
             print(f"❌ Error occurred while visualizing image: {e}")
+            
+            
+    if args.command == "batch_process_sar":
+        batch_sar_config = configure_batch_sar_processing(args)
+        images = batch_sar_config["csv_file"]
+        df = pd.read_csv(images)
+        print("reading csv")
+        #print(df[0])
+        for idx, row in df.iterrows():
+            image_id = row['image_id']
+            image_id = int(image_id.replace('-', ''))
+            image = row['file_path']
+            print(image)
+            
+            print(f"🔄 Processing: {image_id}")
+            sar_processor = SARProcessor(batch_sar_config["region"], image, image_id)
 
-    """
-    _summary_
+            try:
+                sar_processor.process_sar_batch(image)
+            except Exception as e:
+                print(f"❌ Error occurred while visualizing image: {e}")
+            
+            
+            
 
-python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites sentinel2 
-python main.py calculate_indices --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2020-02-01_to_2020-02-29.tif --indices "NDWI" 
-python main.py visualize --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2025-01-01_to_2025-01-31.tif --satellite landsat --title "NDWI Visualization"
-python main.py process_sar --image /home/desy/rift-waters/dataset/bogoria/raw/sentinel1/sentinel1_2025-01-01_to_2025-01-31.tif --region "bogoria" --method "threshold" --threshold_value -15
-python main.py batch_acquisition --satellite "sentinel2" --start_year 2020 --end_year 2021 --region "bogoria"
-python main.py acquire_climate --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31"
-    """

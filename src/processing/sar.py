@@ -13,11 +13,10 @@ from skimage import filters, morphology, measure
 from rasterio.transform import from_bounds
 
 
-
 class SARProcessor:
-    def __init__(self, image, image_id, region):
-        self.image = image
+    def __init__(self, region, image, image_id):
         self.region = region
+        self.image = image
         self.image_id = image_id
         # self._save_results = self._save_results()
 
@@ -26,7 +25,7 @@ class SARProcessor:
         metadata_dir = f"dataset/{self.region}/metadata"
         os.makedirs(metadata_dir, exist_ok=True)
         # Single JSON file for each satellite
-        json_path = Path(metadata_dir )/ f"{self.region}_sar.json"
+        json_path = Path(metadata_dir) / f"{self.region}_sar.json"
 
         # Prepare new entry
         json_entry = {
@@ -50,16 +49,19 @@ class SARProcessor:
         # Write back to single JSON file
         with open(json_path, "w") as f:
             json.dump(existing_data, f, indent=2)
-            
+
         print(f"  📝 Metadata saved to {json_path}")
-        # Also update CSV similarly (if needed)
         csv_path = Path(metadata_dir) / f"{self.region}_sar.csv"
-        df_entry = pd.DataFrame([{
-            "image_id": self.image_id,
-            "total_pixels": results.get("total_pixels", ""),
-            "water_pixels": results.get("water_pixels", ""),
-            "water_area_m2": results.get("water_area_m2", ""),
-        }])
+        df_entry = pd.DataFrame(
+            [
+                {
+                    "image_id": self.image_id,
+                    "total_pixels": results.get("total_pixels", ""),
+                    "water_pixels": results.get("water_pixels", ""),
+                    "water_area_m2": results.get("water_area_m2", ""),
+                }
+            ]
+        )
         print(f"Saving metadata to {csv_path}...")
         if csv_path.exists():
             existing_df = pd.read_csv(csv_path)
@@ -93,13 +95,11 @@ class SARProcessor:
             # print(image_abs)
             total_pixels = image.size
 
-            return image, profile, transform, crs ,total_pixels
+            return image, profile, transform, crs, total_pixels
         except Exception as e:
             print(f"❌ Error loading Sentinel-1 image: {e}")
 
-    def process_sentinel1_sar(
-        self, image, method="threshold", threshold_value=10
-    ):
+    def process_sentinel1_sar(self, image, method="kmeans", threshold_value=15):
         """
         Detect water using SAR backscatter properties
 
@@ -116,7 +116,6 @@ class SARProcessor:
         filtered_image = mean + weights * (image - mean)
 
         if method == "threshold":
-            # Simple thresholding (water has lower backscatter)
             water_mask = filtered_image < threshold_value
 
         elif method == "adaptive_threshold":
@@ -155,43 +154,23 @@ class SARProcessor:
 
         print(f"Mask cleaning: {original_count} -> {cleaned_count} water pixels")
 
-
-
-
-        """
-        Calculate water surface area in square meters and square kilometers
-        """
-        
-
         water_pixels = np.sum(water_mask)
 
         pixel_area = 100  # Assuming 10m x 10m pixels for Sentinel-1
         water_area_m2 = water_pixels * pixel_area
-        
-        #save watermask and metadata
-        
-        
-        
-        output_dir= f"dataset/{self.region}/processed/sar_water_mask/"
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = Path(output_dir )/ f"{self.image_id}.tif"
-        
-        # if transform is None:
-        #     transform = from_bounds(
-        #         0, 0, water_mask.shape[1], water_mask.shape[0], water_mask.shape[1], water_mask.shape[0]
-        #     )
 
-        # Save as GeoTIFF
-        out_profile = profile.copy()
-        out_profile.update({
-        'dtype': 'uint8',
-        'compress': 'lzw',
-        'nodata': 0
-        })
-    
-        with rasterio.open(output_path, 'w', **out_profile) as dst:
-            dst.write(water_mask.astype('uint8'), 1)
+        # save watermask and metadata
+
+        output_dir = f"dataset/{self.region}/processed/sar_water_mask/"
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = Path(output_dir) / f"{self.region}_{self.image_id}.tif"
+
         
+        out_profile = profile.copy()
+        out_profile.update({"dtype": "uint8", "compress": "lzw", "nodata": 0})
+
+        with rasterio.open(output_path, "w", **out_profile) as dst:
+            dst.write(water_mask.astype("uint8"), 1)
 
         self._save_results(
             {
@@ -205,13 +184,17 @@ class SARProcessor:
             }
         )
 
-    
-    
+    def process_sar_batch(self, image):
+        """Process multiple SAR images from a CSV file"""
 
-    def batch_process_sentinel1(self, images, method="threshold", threshold_value=-15):
-        for image in images:
+        # Read CSV
+        
+            
+        try:
             self.process_sentinel1_sar(
-                image, method, threshold_value
+                image, method = "kmeans", threshold=15
             )
             
-    
+        except Exception as e:
+            error_msg = f"Failed to process {self.image_id}: {str(e)}"
+            print(f"❌ {error_msg}")
