@@ -16,9 +16,7 @@ class ImageAcquisition:
         self.region = region
         self.base_dir = Path(f"./dataset/{region}")
 
-    def checkdir(path):
-        if not os.path.exists(path):
-            os.makedirs(os.path.abspath(path))
+    
 
     def _ensure_directories(self, satellite_type):
         dir_path = self.base_dir / "raw" / satellite_type
@@ -202,8 +200,8 @@ class ImageAcquisition:
             def preprocess_sar(image):
                 # Apply thermal noise removal, radiometric calibration, and terrain correction
                 edge = image.lt(-30.0)
-                image = image.mask().And(edge.Not())
-                return image.clip(roi)
+                masked_image = image.mask().And(edge.Not())
+                return image.updateMask(masked_image).clip(roi)
 
             processed = sentinel1.map(preprocess_sar)
             print("Processed sar")
@@ -213,13 +211,26 @@ class ImageAcquisition:
             
             output_filename = f"{self.region}_{image_id}_{polarization}_{orbit}.tif"
             output_path = sentinel1_dir / output_filename
-
+            print("downloading")
+            
             geemap.ee_export_image(
-                composite, filename=str(output_path), scale=100, region=roi
+                composite, filename=str(output_path), scale=10, region=roi
             )
-            # geemap.ee_export_image_to_drive(
-            #     composite, description=output_filename, scale=10, region=roi
-            # )
+            task = geemap.ee_export_image_to_drive(
+                composite, 
+                
+                folder="Sentinel1_Images",
+                fileNamePrefix= f"{self.region}_{image_id}_{polarization}_{orbit}",
+                description=output_filename,
+                scale=10, 
+                region=roi,
+                crs= 'EPSG:4326',
+                fileFormat= 'GeoTIFF'
+            )
+            
+            #task.start()
+            
+            print("saving metadata")
 
             self._save_metadata(
                 {

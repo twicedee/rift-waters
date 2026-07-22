@@ -1,8 +1,10 @@
 
-python main.py batch_process_sar --region "baringo" --csv_file "dataset/baringo/metadata/baringo_Sentinel-1.csv"
-python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --resolution 10 --satellites sentinel2 
+python main.py batch_process_sar --region "bogoria" --csv_file "dataset/bogoria/metadata/bogoria_Sentinel-1.csv"
+python main.py acquire --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --satellites sentinel1 
 python main.py calculate_indices --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2020-02-01_to_2020-02-29.tif --indices "NDWI" 
 python main.py visualize --image /home/desy/rift-waters/dataset/bogoria/raw/landsat8/landsat8_2025-01-01_to_2025-01-31.tif --satellite landsat --title "NDWI Visualization"
-python main.py process_sar --image /home/desy/rift-waters/dataset/bogoria/raw/sentinel1/sentinel1_2025-01-01_to_2025-01-31.tif --region "bogoria" --method "threshold" --threshold_value -15
+python main.py process_sar --image /home/desy/rift-waters/dataset/bogoria/raw/sentinel1/bogoria_20170430_VV_ASCENDING.tif --region "bogoria" 
 python main.py batch_acquisition --satellite "sentinel2" --start_year 2020 --end_year 2021 --region "bogoria"
 python main.py acquire_climate --region "bogoria" --start_date "2023-01-01" --end_date "2023-01-31"
+python main.py acquire --region "" --start_date "2023-01-01" --end_date "2023-01-31" --max_cloud 20 --satellites sentinel1 
+python main.py acquire_dem --region "bogoria" --start_date "2024-01-01" --end_date "2024-01-31" 
