@@ -89,7 +89,7 @@ class WBMProcessor:
         return results
 
 
-    def process_sar_batch(self, wbm_path=None):
+    def process_wbm_batch(self, wbm_path=None):
 
         try:
             self.compute_wbm_stats(wbm_path)

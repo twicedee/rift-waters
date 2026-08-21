@@ -1,5 +1,4 @@
-# main.py
-
+import os
 import ee
 import argparse
 import pandas as pd
@@ -12,41 +11,39 @@ from config import (
     configure_visualization,
     configure_sar,
     configure_batch_acquisition,
-    configure_climate,
+    configure_era5,
     configure_batch_sar_processing,
     configure_dem_acquisition,
+    configure_batch_dem_acquisition,
+    configure_batch_wbm_processing,
+    configure_landcover_acquisition,
+    configure_batch_landcover_acquisition
 )
+from src.acquisition.landcover import LandCoverAcquisition
 from src.acquisition.image_aquisition import ImageAcquisition
-from src.acquisition.era5 import ClimateAcquisition
+from src.acquisition.era5 import ERA5Acquisition
 from src.processing.indices import CalculateIndices
 from src.processing.sar import SARProcessor
+from src.processing.wbm import WBMProcessor
 from src.visualisation.image_visualisation import visualize_image
 from src.acquisition.dem_aquisition import DEMAcquisition
 
 
-def gee_authenticate(project):
+def setup_gee(project_id):
     try:
+        # Try existing credentials first
+        ee.Initialize(project=project_id)
+        print("✓ Using existing credentials")
+    except:
+        # Authenticate if needed
+        print("Authentication required...")
         ee.Authenticate()
-        ee.Initialize(project=project)
-        print("✅ GEE authentication successful")
-        return True
-    except Exception as e:
-        print(f"❌ GEE authentication failed: {e}")
-        return False
+        ee.Initialize(project=project_id)
+        print("✓ Authentication complete")
 
+#ee.Initialize(project="riftwaters")  # Initialize Earth Engine with default credentials
 
-def check_authentication():
-    try:
-        ee.Initialize()
-        print("✅ GEE is already authenticated and initialized")
-        return True
-    except Exception as e:
-        print(f"❌ GEE is not authenticated: {e}")
-        return False
-
-
-gee_authenticate("riftwaters")
-
+#setup_gee("riftwaters")  # Initialize Earth Engine with default credentials
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Satellite Image Acquisition System")
@@ -156,17 +153,23 @@ if __name__ == "__main__":
     )
     dem_parser.add_argument("--end_date", type=str, help="End date (YYYY-MM-DD)")
 
-    climate_parser = subparsers.add_parser(
-        "acquire_climate", help="Acquire climate data"
+    era5_parser = subparsers.add_parser(
+        "acquire_era5", help="Acquire era5 data"
     )
-    climate_parser.add_argument(
+    era5_parser.add_argument(
         "--region", type=str, required=True, help="Name of the region of interest"
     )
-    climate_parser.add_argument(
+    era5_parser.add_argument(
         "--start_date", type=str, required=True, help="Start date (YYYY-MM-DD)"
     )
-    climate_parser.add_argument(
+    era5_parser.add_argument(
         "--end_date", type=str, required=True, help="End date (YYYY-MM-DD)"
+    )
+    era5_parser.add_argument(
+        "--freq",
+        type=str,
+        default="MS",
+        help="Frequency for chunking ERA5 data (default: MS for monthly)",
     )
 
     batch_acq_parser = subparsers.add_parser(
@@ -206,13 +209,62 @@ if __name__ == "__main__":
         default="Satellite Image",
         help="Title for the visualization",
     )
+    
+    
+    batch_acq_dem_parser = subparsers.add_parser(
+        "batch_dem_acquisition", help="Batch acquire DEM data"
+    )
+    
+    batch_acq_dem_parser.add_argument(
+        "--start_year", type=int, required=True, help="Acquisition start year"
+    )
+    batch_acq_dem_parser.add_argument(
+        "--end_year", type=int, required=True, help="Acquisition end year"
+    )
+    batch_acq_dem_parser.add_argument(
+        "--region", type=str, required=True, help="Region of interest"
+    )
+    
+    
+    landcover_parser = subparsers.add_parser(
+    "acquire_landcover", help="Acquire Dynamic World land cover for a region"
+    )
+    landcover_parser.add_argument(
+        "--region",
+        type=str,
+        required=True,
+        help="Name of the region of interest for land cover acquisition",
+    )
+    landcover_parser.add_argument(
+        "--start_date", type=str, required=True, help="Start date (YYYY-MM-DD)"
+    )
+    landcover_parser.add_argument(
+        "--end_date", type=str, required=True, help="End date (YYYY-MM-DD)"
+    )
 
+    batch_acq_landcover_parser = subparsers.add_parser(
+        "batch_landcover_acquisition", help="Batch acquire land cover data"
+    )
+    batch_acq_landcover_parser.add_argument(
+        "--start_year", type=int, required=True, help="Acquisition start year"
+    )
+    batch_acq_landcover_parser.add_argument(
+        "--end_year", type=int, required=True, help="Acquisition end year"
+    )
+    batch_acq_landcover_parser.add_argument(
+        "--region", type=str, required=True, help="Region of interest"
+    )
+    
+    
+    
     args = parser.parse_args()
+    
+    
 
     if args.command == "acquire":
         acq_config = configure_acquisition(args)
         acquisition = ImageAcquisition(region=args.region)
-        roi = get_roi_by_wards(args.region)
+        roi = get_roi_by_name(args.region)
 
         if roi is None:
             print(f"❌ Invalid region specified: {args.region}")
@@ -261,19 +313,29 @@ if __name__ == "__main__":
             roi=roi,
         )
 
-    elif args.command == "acquire_climate":
-        climate_config = configure_climate(args)
-        climate_acquisition = ClimateAcquisition(region=climate_config["region"])
-        roi = get_roi_by_name(climate_config["region"])
+    elif args.command == "acquire_era5":
+        era5_config = configure_era5(args)
+        era5_acquisition = ERA5Acquisition(region=era5_config["region"])
+        roi = get_roi_by_name(era5_config["region"])
 
         if roi is None:
-            print(f"❌ Invalid region specified: {climate_config['region']}")
+            print(f"❌ Invalid region specified: {era5_config['region']}")
             exit(1)
 
-        climate_acquisition.acquire_era5(
+        chunk_paths = era5_acquisition.batch_acquire_era5(
             roi=roi,
-            start_date=climate_config["start_date"],
-            end_date=climate_config["end_date"],
+            start_date=era5_config["start_date"],
+            end_date=era5_config["end_date"],
+            freq=era5_config["freq"],
+        )
+
+        if not chunk_paths:
+            print("❌ No ERA5 chunks acquired successfully.")
+            exit(1)
+
+        era5_acquisition.merge_chunks(
+            start_date=era5_config["start_date"],
+            end_date=era5_config["end_date"],
         )
 
     elif args.command == "calculate_indices":
@@ -295,17 +357,18 @@ if __name__ == "__main__":
     elif args.command == "batch_process_sar":
         batch_sar_config = configure_batch_sar_processing(args)
         df = pd.read_csv(batch_sar_config["csv_file"])
-        print("reading csv")
+        # print("reading csv")
 
         for idx, row in df.iterrows():
             image_id = row["image_id"]
             image_id = int(image_id.replace("-", ""))
             image_path = row["file_path"]
-            print(image_path)
-            print(f"🔄 Processing: {image_id}")
+            # print(image_path)
+            # print(f"🔄 Processing: {image_id}")
 
             sar_processor = SARProcessor(batch_sar_config["region"], image_id)
-            sar_processor.process_sentinel1_sar(image_path)
+            sar_processor.process_sar_batch(image_path)
+            #sar_processor.flag_outliers()
             
     elif args.command == "acquire_dem":
         dem_config = configure_dem_acquisition(args)
@@ -315,9 +378,63 @@ if __name__ == "__main__":
         roi = get_roi_by_name(dem_config["region"])
         dem_path = dem_acquisition.acquire_dem(roi, dem_config["start_date"], dem_config["end_date"])  
         
+    elif args.command == "batch_dem_acquisition":
+        dem_config = configure_batch_dem_acquisition(args)
+        dem_acquisition = DEMAcquisition(
+            region=dem_config["region"]
+        )
+        roi = get_roi_by_name(dem_config["region"])
+        # print(f"🔄 Batch acquiring DEM for region: {dem_config['region']} from {dem_config['start_year']} to {dem_config['end_year']}")
+        dem_acquisition.batch_acquisition(
+            roi=roi,
+            start_year=dem_config["start_year"],
+            end_year=dem_config["end_year"],
+        )
+
+    elif args.command == "batch_process_wbm":
+        batch_wbm_config = configure_batch_wbm_processing(args)
+        df = pd.read_csv(batch_wbm_config["csv_file"])
+        # print("reading csv")
+
+        for idx, row in df.iterrows():
+            image_id = row["image_id"]
+            image_id = int(image_id.replace("-", ""))
+            image_path = row["file_path"]
+            # print(image_path)
+            # print(f"🔄 Processing: {image_id}")
+
+            wbm_processor = WBMProcessor(batch_wbm_config["region"], image_id)
+            wbm_processor.process_wbm_batch(image_path)
+            
+    elif args.command == "acquire_landcover":
+        landcover_config = configure_landcover_acquisition(args)
+        landcover_acquisition = LandCoverAcquisition(
+            region=landcover_config["region"]
+        )
+        roi = get_roi_by_name(landcover_config["region"])
+        landcover_acquisition.acquire_landcover(
+            roi, landcover_config["start_date"], landcover_config["end_date"]
+        )
+
+    elif args.command == "batch_landcover_acquisition":
+        landcover_config = configure_batch_landcover_acquisition(args)
+        landcover_acquisition = LandCoverAcquisition(
+            region=landcover_config["region"]
+        )
+        roi = get_roi_by_name(landcover_config["region"])
+        # print(f"🔄 Batch acquiring land cover for region: {landcover_config['region']} from {landcover_config['start_year']} to {landcover_config['end_year']}")
+        landcover_acquisition.batch_acquisition(
+            roi=roi,
+            start_year=landcover_config["start_year"],
+            end_year=landcover_config["end_year"],
+        )
+
+
+
 
     elif args.command == "visualize":
         vis_config = configure_visualization(args)
         visualize_image(
             vis_config["image"], vis_config["satellite"], vis_config["title"]
         )
+

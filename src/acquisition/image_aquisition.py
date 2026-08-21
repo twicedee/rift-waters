@@ -9,6 +9,7 @@ from calendar import monthrange
 from pathlib import Path
 from typing import Optional
 from importlib.resources import path
+from src.utils.export_utils import export_image_with_fallback
 
 
 class ImageAcquisition:
@@ -85,7 +86,9 @@ class ImageAcquisition:
         start_date: str,
         end_date: str,
         max_cloud: int = 30,
-        export_resolution: int = 1000,
+        scale: int = 10,
+        crs: str = "EPSG:4326",
+        export_to_drive: bool = False,
         apply_mask: bool = True,
     ) -> Optional[str]:
         sentinel2_dir = self._ensure_directories("sentinel2")
@@ -121,25 +124,31 @@ class ImageAcquisition:
             band_names = ["Blue", "Green", "Red", "NIR", "SWIR1", "SWIR2"]
             image = image.select(bands, band_names)
             image_id = int(end_date.replace('-', ''))
+            
+            def save_image(image, output_path=None, band=None, save_to_drive=False):
+                export_image_with_fallback(
+                    image,
+                    local_path=output_path,
+                    scale=scale,
+                    region=roi,
+                    crs=crs,
+                    drive_folder="GEE_exports",
+                    drive_filename=f"{self.region}_{image_id}_{band}.tif",
+                )
+                print(f"  ✅ {band} saved to {output_path}")
 
             output_filename = f"{self.region}_{image_id}.tif"
             output_path = sentinel2_dir / output_filename
             # print(f"Exporting Sentinel-2 image to {output_path}")
 
-            geemap.ee_export_image(
-                image, filename=str(output_path), scale=100, region=roi
-            )
-            # print(f"Sentinel-2 image saved to {output_path}")
-            # geemap.ee_export_image_to_drive(
-            #     image, description=output_filename, scale=100, region=roi
-            # )
+            save_image(image, output_path=output_path, save_to_drive=True)
             self._save_metadata(
                 {
                     "satellite": "sentinel2",
                     "start_date": start_date,
                     "end_date": end_date,
                     "max_cloud": max_cloud,
-                    "resolution": export_resolution,
+                    "resolution": scale,
                     "num_images": count,
                     "file_path": str(output_path),
                     "bands": band_names,
@@ -159,6 +168,8 @@ class ImageAcquisition:
         end_date: str,
         polarization: str = "VV",
         orbit: str = "ASCENDING",
+        scale: int = 10,
+        save_to_drive: bool = False,
     ) -> Optional[str]:
         """
         Acquire Sentinel-1 SAR imagery for water detection in cloudy conditions
@@ -186,7 +197,7 @@ class ImageAcquisition:
                     ee.Filter.listContains(
                         "transmitterReceiverPolarisation", polarization
                     )
-                )
+                ).select(polarization)
                 .filter(ee.Filter.eq("orbitProperties_pass", orbit))
                 .filter(ee.Filter.eq("instrumentMode", "IW"))
             )
@@ -198,39 +209,32 @@ class ImageAcquisition:
                 return None
 
             def preprocess_sar(image):
-                # Apply thermal noise removal, radiometric calibration, and terrain correction
                 edge = image.lt(-30.0)
                 masked_image = image.mask().And(edge.Not())
                 return image.updateMask(masked_image).clip(roi)
 
             processed = sentinel1.map(preprocess_sar)
-            print("Processed sar")
+            # print("Processed sar")
             composite = processed.median()
             image_id = int(end_date.replace('-', ''))
 
             
             output_filename = f"{self.region}_{image_id}_{polarization}_{orbit}.tif"
             output_path = sentinel1_dir / output_filename
-            print("downloading")
+            # print("downloading")
             
-            geemap.ee_export_image(
-                composite, filename=str(output_path), scale=10, region=roi
-            )
-            task = geemap.ee_export_image_to_drive(
-                composite, 
-                
-                folder="Sentinel1_Images",
-                fileNamePrefix= f"{self.region}_{image_id}_{polarization}_{orbit}",
-                description=output_filename,
-                scale=10, 
-                region=roi,
-                crs= 'EPSG:4326',
-                fileFormat= 'GeoTIFF'
-            )
-            
-            #task.start()
-            
-            print("saving metadata")
+            def save_image(image, output_path=None, band=None, save_to_drive=False):
+                export_image_with_fallback(
+                    image,
+                    local_path=output_path,
+                    scale=scale,
+                    region=roi,
+                    drive_folder="GEE_exports",
+                    drive_filename=f"{self.region}_{image_id}_{band}.tif",
+                )
+                print(f"  ✅ {band} saved to {output_path}")
+            save_image(composite, output_path=output_path, band=polarization, save_to_drive=save_to_drive)
+            # print("saving metadata")
 
             self._save_metadata(
                 {
@@ -259,6 +263,9 @@ class ImageAcquisition:
         end_date: str,
         satellite: str = "landsat8",
         max_cloud: int = 30,
+        crs: str = "EPSG:4326",
+        scale: int = 30,
+        save_to_drive: bool = False,
     ) -> Optional[str]:
         """
         Acquire Landsat imagery
@@ -295,7 +302,7 @@ class ImageAcquisition:
             )
 
             count = landsat.size().getInfo()
-            print(f"  Found {count} images")
+            # print(f"  Found {count} images")
 
             if count == 0:
                 return None
@@ -328,9 +335,18 @@ class ImageAcquisition:
             output_filename = f"{self.region}_{image_id}.tif"
             output_path = landsat_dir / output_filename
 
-            geemap.ee_export_image(
-                composite, filename=str(output_path), scale=30, region=roi
-            )
+            def save_image(image, output_path=None, band=None, save_to_drive=False):
+                export_image_with_fallback(
+                    image,
+                    local_path=output_path,
+                    scale=scale,
+                    region=roi,
+                    drive_folder="GEE_exports",
+                    drive_filename=f"{self.region}_{image_id}.tif",
+                )
+                # print(f"  ✅ {band} saved to {output_path}")
+            
+            save_image(composite, output_path=output_path, band="Landsat", save_to_drive=save_to_drive)
 
             self._save_metadata(
                 {

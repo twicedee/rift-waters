@@ -1,11 +1,11 @@
 import ee
 import geemap
 import json
-
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import numpy as np
+from src.utils.export_utils import export_image_with_fallback
 
 
 class DEMAcquisition:
@@ -34,7 +34,6 @@ class DEMAcquisition:
             "end_date": metadata.get("end_date", ""),
             "scale_m": metadata.get("scale", 30),
             "crs": metadata.get("crs", "EPSG:4326"),
-            "include_wbm": metadata.get("include_wbm", False),
             "acquisition_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
         }
 
@@ -51,7 +50,7 @@ class DEMAcquisition:
         with open(json_path, "w") as f:
             json.dump(existing_data, f, indent=2)
 
-        csv_path = metadata_dir / f"{self.region}_dem.csv"
+        csv_path = metadata_dir / f"{self.region}_GLO30.csv"
 
         # One row per image_id, carrying BOTH band paths — avoids the DEM row
         # getting evicted by a later WBM save for the same image_id.
@@ -61,6 +60,7 @@ class DEMAcquisition:
                     "image_id": metadata.get("image_id", ""),
                     "dem_path": metadata.get("dem_path", ""),
                     "wbm_path": metadata.get("wbm_path", ""),
+                    "slope_path": metadata.get("slope_path", ""),
                 }
             ]
         )
@@ -83,8 +83,8 @@ class DEMAcquisition:
         start_date: str,
         end_date: str,
         scale: int = 30,
-        crs: str = "EPSG:4326",
-        include_wbm: bool = True,
+        save_to_drive: bool = False,
+        
     ) -> dict:
 
         dem_dir = self._ensure_directories()
@@ -107,36 +107,30 @@ class DEMAcquisition:
                 output_path = dem_dir / output_filename
                 return image, output_path, image_id
 
-            def save_image(image, output_path, band):
-                # Single CRS used consistently for both direct download and
-                # the Drive fallback, rather than re-detecting it per export.
-                c
-                print(f"  ✅ {band} saved to {output_path}")
-
-                task = ee.batch.Export.image.toDrive(
+            def save_image(image, output_path=None, band=None, save_to_drive=False):
+                export_image_with_fallback(
                     image=image,
-                    folder="GEE_exports",
-                    fileNamePrefix=f"{self.region}_{image_id}_{band}",  # plain filename, not local path
-                    region=roi,
+                    local_path=output_path,
                     scale=scale,
-                    crs=crs,
-                    maxPixels=1e10,
+                    region=roi,
+                    drive_folder="GEE_exports",
+                    drive_filename=f"{self.region}_{band}.tif" if band else None,
                 )
-                # task.start()
-
+                
             print(f"  ⬇️ Downloading Copernicus GLO-30 DEM for {self.region}...")
 
-            if crs == "EPSG:4326":
-                print("  ⚠️ WARNING: DEM is in geographic CRS (EPSG:4326)")
-                print("     Reproject to UTM before using with SAR boundaries")
-
+            
             dem_image, dem_output_path, image_id = get_band("DEM")
-            save_image(dem_image, dem_output_path, "DEM")
+            slope_image = ee.Terrain.slope(dem_image)
+            
+            save_image(dem_image, dem_output_path, band="DEM")
+            slope_path = dem_dir / f"{self.region}_{image_id}_slope.tif"
+            save_image(slope_image, output_path=slope_path, band="Slope")
 
-            wbm_output_path = None
-            if include_wbm:
-                wbm_image, wbm_output_path, image_id = get_band("WBM")
-                save_image(wbm_image, wbm_output_path, "WBM")
+            
+            wbm_image, wbm_output_path, image_id = get_band("WBM")
+            
+            save_image(wbm_image, wbm_output_path, band="WBM")
 
             self._save_metadata(
                 {
@@ -144,17 +138,17 @@ class DEMAcquisition:
                     "image_id": str(image_id),
                     "dem_path": str(dem_output_path),
                     "wbm_path": str(wbm_output_path) if wbm_output_path else "",
+                    "slope_path": str(slope_path),
                     "start_date": start_date,
                     "end_date": end_date,
                     "scale": scale,
-                    "crs": crs,
-                    "include_wbm": include_wbm,
                 }
             )
 
             return {
                 "dem_path": str(dem_output_path),
                 "wbm_path": str(wbm_output_path) if wbm_output_path else None,
+                "slope_path": str(slope_path),
             }
 
         except Exception as e:
@@ -167,9 +161,7 @@ class DEMAcquisition:
         start_year: int,
         end_year: int,
         scale: int = 30,
-        crs: str = "EPSG:4326",
-        interval_months: int = 12,
-        include_wbm: bool = True,
+        interval_months: int = 1,
     ):
         month_ranges = []
         for year in range(start_year, end_year + 1):
@@ -197,6 +189,4 @@ class DEMAcquisition:
                 start_date=start_date,
                 end_date=end_date,
                 scale=scale,
-                crs=crs,
-                include_wbm=include_wbm,
             )

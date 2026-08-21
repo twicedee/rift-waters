@@ -1,16 +1,19 @@
+import os
 import json
 import pandas as pd
 import numpy as np
 import rasterio
 import rasterio.features
 import geopandas as gpd
-import os
+from shapely.geometry import box
 from pathlib import Path
 from scipy import ndimage
 from datetime import datetime
 from sklearn.cluster import KMeans
 from skimage import filters, morphology, measure
 from shapely.geometry import shape
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+
 
 
 class SARProcessor:
@@ -22,30 +25,7 @@ class SARProcessor:
         metadata_dir = f"dataset/{self.region}/metadata"
         os.makedirs(metadata_dir, exist_ok=True)
         
-        json_path = Path(metadata_dir) / f"{self.region}_sar.json"
         
-        json_entry = {
-            "image_id": self.image_id,
-            "processing_method": results.get("method", ""),
-            "threshold_value": results.get("threshold_value", ""),
-            "total_pixels": results.get("total_pixels", ""),
-            "boundary_perimeter_m": results.get("boundary_perimeter_m", ""),
-            "boundary_compactness": results.get("boundary_compactness", ""),
-            "processed_at": datetime.now().isoformat(),
-        }
-        
-        if json_path.exists():
-            with open(json_path, "r") as f:
-                existing_data = json.load(f)
-                if isinstance(existing_data, list):
-                    existing_data.append(json_entry)
-                else:
-                    existing_data = [existing_data, json_entry]
-        else:
-            existing_data = [json_entry]
-
-        with open(json_path, "w") as f:
-            json.dump(existing_data, f, indent=2)
 
         csv_path = Path(metadata_dir) / f"{self.region}_sar.csv"
         df_entry = pd.DataFrame(
@@ -58,8 +38,6 @@ class SARProcessor:
                     "boundary_area_m2": results.get("boundary_area_m2", ""),
                     "boundary_perimeter_m": results.get("boundary_perimeter_m", ""),
                     "boundary_compactness": results.get("boundary_compactness", ""),
-                    "method": results.get("method", ""),
-                    "processed_at": datetime.now().isoformat(),
                 }
             ]
         )
@@ -72,8 +50,9 @@ class SARProcessor:
         else:
             df_entry.to_csv(csv_path, index=False)
 
-        print(f"  📝 Metadata saved to {json_path} and {csv_path}")
-
+        print(f"  📝 Metadata saved to  {csv_path}")
+        
+    
     def load_sentinel1_image(self, image_path):
         try:
             with rasterio.open(image_path) as src:
@@ -81,13 +60,58 @@ class SARProcessor:
                 profile = src.profile
                 transform = src.transform
                 crs = src.crs
+                bounds = src.bounds
+                width = src.width
+                height = src.height
 
-            total_pixels = image.size
-            return image, profile, transform, crs, total_pixels
-            
+            if crs is None:
+                raise ValueError(f"No CRS found for {self.region}_{self.image_id}")
+
+            if crs.is_projected:
+                # print("  ✅ CRS is projected, no reprojection needed.")
+                total_pixels = image.size
+                return image, profile, transform, crs, total_pixels
+
+            # print("Projecting to UTM (in memory)...")
+            bounds_gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=crs)
+            dst_crs = bounds_gdf.estimate_utm_crs()
+            # print(f"Estimated UTM CRS: {dst_crs}")
+
+            dst_transform, dst_width, dst_height = calculate_default_transform(
+                crs, dst_crs, width, height, *bounds
+            )
+
+            reprojected_image = np.empty((dst_height, dst_width), dtype=image.dtype)
+
+            reproject(
+                source=image,
+                destination=reprojected_image,
+                src_transform=transform,
+                src_crs=crs,
+                dst_transform=dst_transform,
+                dst_crs=dst_crs,
+                resampling=Resampling.bilinear,
+            )
+
+            profile = profile.copy()
+            profile.update({
+                "crs": dst_crs,
+                "transform": dst_transform,
+                "width": dst_width,
+                "height": dst_height,
+            })
+
+            # print(f"New pixel width: {dst_transform.a} m, height: {dst_transform.e} m")
+            # print(f"New pixel area: {abs(dst_transform.a * dst_transform.e)} m²")
+
+            total_pixels = reprojected_image.size
+            return reprojected_image, profile, dst_transform, dst_crs, total_pixels
+
         except Exception as e:
             print(f"❌ Error loading Sentinel-1 image from {image_path}: {e}")
             raise
+        
+            
 
     def process_sentinel1_sar(
         self,
@@ -99,7 +123,7 @@ class SARProcessor:
         save_shapefile=False,
     ):
         image, profile, transform, crs, total_pixels = self.load_sentinel1_image(image_path)
-        
+        # print(f"  📝 Total pixels in image: {total_pixels}")
         mean = ndimage.uniform_filter(image, size=7)
         mean_sq = ndimage.uniform_filter(image**2, size=7)
         variance = mean_sq - mean**2
@@ -135,13 +159,16 @@ class SARProcessor:
             raise ValueError(f"Unknown method: {method}")
 
         original_count = np.sum(water_mask)
-        water_mask = morphology.remove_small_objects(water_mask, min_size=100)
+        water_mask = morphology.remove_small_objects(water_mask, max_size=10000)
         water_mask = morphology.closing(water_mask, morphology.disk(3))
         water_mask = morphology.opening(water_mask, morphology.disk(2))
         cleaned_count = np.sum(water_mask)
 
         water_pixels = np.sum(water_mask)
-        pixel_area = 100
+
+        
+
+        pixel_area = abs(transform.a * transform.e)  # derived from actual transform, in m²
         water_area_m2 = water_pixels * pixel_area
 
         output_dir = f"dataset/{self.region}/processed/sar_water_mask/"
@@ -171,6 +198,8 @@ class SARProcessor:
             boundary_area_m2 = ""
             boundary_perimeter_m = ""
             boundary_compactness = ""
+            
+        
 
         self._save_results(
             {
@@ -192,7 +221,7 @@ class SARProcessor:
         water_mask,
         transform,
         crs,
-        min_area_m2=5000,
+        min_area_m2=20000,
         simplify_tolerance=10,
         save_shapefile=False,
     ):
@@ -202,7 +231,7 @@ class SARProcessor:
         geometries = [shape(geom) for geom, value in shapes_gen if value == 1]
 
         if not geometries:
-            print(f"  ⚠️ No water polygons found for {self.region}_{self.image_id}")
+            # print(f"  ⚠️ No water polygons found for {self.region}_{self.image_id}")
             return None
 
         gdf = gpd.GeoDataFrame({"geometry": geometries}, crs=crs)
@@ -233,24 +262,37 @@ class SARProcessor:
             gdf.to_file(shp_path)
 
         return gdf
+    
+    def flag_outliers(self, perimeter_ratio_threshold=2.0):
+        metadata_dir = f"dataset/{self.region}/metadata"
+        csv_path = Path(metadata_dir) / f"{self.region}_sar.csv"
 
-    def process_sar_batch(self, image_paths, save_shapefile=False):
-        if isinstance(image_paths, dict):
-            for image_id, path in image_paths.items():
-                self.image_id = image_id
-                try:
-                    self.process_sentinel1_sar(
-                        path, 
-                        save_shapefile=save_shapefile
-                    )
-                except Exception as e:
-                    print(f"❌ Failed to process {image_id}: {e}")
-        else:
-            for path in image_paths:
-                try:
-                    self.process_sentinel1_sar(
-                        path, 
-                        save_shapefile=save_shapefile
-                    )
-                except Exception as e:
-                    print(f"❌ Failed to process {path}: {e}")
+        if not csv_path.exists():
+            print(f"  ⚠️ No metadata CSV found at {csv_path}")
+            return None
+
+        df = pd.read_csv(csv_path)
+        median_perimeter = df["boundary_perimeter_m"].median()
+        df["perimeter_ratio"] = df["boundary_perimeter_m"] / median_perimeter
+        df["is_outlier"] = df["perimeter_ratio"] > perimeter_ratio_threshold
+
+        df.to_csv(csv_path, index=False)
+
+        n_outliers = df["is_outlier"].sum()
+        print(f"  📝 Flagged {n_outliers} outlier(s) out of {len(df)} in {csv_path}")
+
+        return df
+    
+    
+    
+    
+
+    def process_sar_batch(self, image_path, save_shapefile=False):
+        try:
+            self.process_sentinel1_sar(
+                image_path, 
+                save_shapefile=save_shapefile
+            )
+        except Exception as e:
+            print(f"❌ Failed to process {image_path}: {e}")
+            
